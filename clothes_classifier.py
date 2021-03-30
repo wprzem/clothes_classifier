@@ -18,19 +18,12 @@ def img_from_url(url):
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--url', dest='url', required=True, help='url to the image')
+    parser.add_argument('--thresh', dest='thresh', type=float, default=0.5, help='detection confidence threshold')
     return parser.parse_args()
 
 
-def classify_clothes(img):
-    net = cv2.dnn.readNet("yolov3_clothes.weights", "yolov3_clothes.cfg")
-
-    layer_names = net.getLayerNames()
-    output_layers = [layer_names[i[0] - 1] for i in net.getUnconnectedOutLayers()]
-    height, width, channels = img.shape
-    blob = cv2.dnn.blobFromImage(img, 1 / 255, (416, 416), (0, 0, 0), True, crop=False)
-    net.setInput(blob)
-    outs = net.forward(output_layers)
-
+def get_detected_boxes(img, outs, conf_threshold):
+    img_height, img_width, img_channels = img.shape
     class_ids = []
     confidences = []
     boxes = []
@@ -39,20 +32,33 @@ def classify_clothes(img):
             scores = detection[5:]
             class_id = np.argmax(scores)
             confidence = scores[class_id]
-            if confidence > 0.5:
-                # Object detected
-                center_x = int(detection[0] * width)
-                center_y = int(detection[1] * height)
-                w = int(detection[2] * width)
-                h = int(detection[3] * height)
-                # Rectangle coordinates
-                x = int(center_x - w / 2)
-                y = int(center_y - h / 2)
-                boxes.append([x, y, w, h])
+            if confidence > conf_threshold:
+                det_center_x = int(detection[0] * img_width)
+                det_center_y = int(detection[1] * img_height)
+
+                det_width = int(detection[2] * img_width)
+                det_height = int(detection[3] * img_height)
+
+                det_corner_x = int(det_center_x - det_width / 2)
+                det_corner_y = int(det_center_y - det_height / 2)
+
+                boxes.append([det_corner_x, det_corner_y, det_width, det_height])
                 confidences.append(float(confidence))
                 class_ids.append(class_id)
+    return class_ids, confidences, boxes
 
-    indexes = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
+
+def classify_objects(img, conf_threshold):
+    net = cv2.dnn.readNet("yolov3_clothes.weights", "yolov3_clothes.cfg")
+    blob = cv2.dnn.blobFromImage(img, 1 / 255, (416, 416), (0, 0, 0), True, crop=False)
+    net.setInput(blob)
+
+    layer_names = net.getLayerNames()
+    output_layers = [layer_names[i[0] - 1] for i in net.getUnconnectedOutLayers()]
+    outs = net.forward(output_layers)
+
+    class_ids, confidences, boxes = get_detected_boxes(img, outs, conf_threshold)
+    indexes = cv2.dnn.NMSBoxes(boxes, confidences, conf_threshold, 0.4)
 
     with open("clothes.names", "r") as f:
         classes = [line.strip() for line in f.readlines()]
@@ -63,14 +69,14 @@ def classify_clothes(img):
             print(label)
 
     if not boxes:
-        print('No clothing was detected.')
+        print('No object was detected.')
 
 
 def main():
     args = parse_args()
     image = img_from_url(args.url)
     if image is not None:
-        classify_clothes(image)
+        classify_objects(image, args.thresh)
 
 
 if __name__ == '__main__':
