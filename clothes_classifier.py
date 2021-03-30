@@ -22,7 +22,7 @@ def main():
 
     img = img_from_url(args.url)
 
-    net = cv2.dnn.readNet("yolov3.weights", "yolov3.cfg")
+    net = cv2.dnn.readNet("yolov3_clothes.weights", "yolov3_clothes.cfg")
     net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
     net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
 
@@ -30,8 +30,6 @@ def main():
     output_layers = [layer_names[i[0] - 1] for i in net.getUnconnectedOutLayers()]
 
     if img is not None:
-        # cv2.imshow("Image", img)
-        # cv2.waitKey(0)
         height, width, channels = img.shape
         blob = cv2.dnn.blobFromImage(img, 1 / 255, (416, 416), (0, 0, 0), True, crop=False)
         net.setInput(blob)
@@ -60,15 +58,16 @@ def main():
 
         indexes = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
 
-        with open("coco.names", "r") as f:
+        with open("clothes.names", "r") as f:
             classes = [line.strip() for line in f.readlines()]
 
-        font = cv2.FONT_HERSHEY_PLAIN
         for i in range(len(boxes)):
             if i in indexes:
-                x, y, w, h = boxes[i]
-                label = f"{classes[class_ids[i]]}: {100 * confidences[i]:.2f}"
+                label = f"{classes[class_ids[i]]}: {100 * confidences[i]:.2f}%"
                 print(label)
+
+        if not boxes:
+            print('no item was detected')
 
 
 if __name__ == '__main__':
