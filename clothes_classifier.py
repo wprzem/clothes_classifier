@@ -11,8 +11,8 @@ def img_from_url(url):
         image = np.asarray(bytearray(resp.read()), dtype="uint8")
         image = cv2.imdecode(image, cv2.IMREAD_COLOR)
         return image
-    except HTTPError:
-        print('Invalid url - image not found.')
+    except HTTPError as e:
+        print(f'Invalid url - error {e.code}.')
 
 
 def parse_args():
@@ -22,7 +22,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def get_detected_boxes(img, outs, conf_threshold):
+def get_detected_classes(img, outs, conf_threshold):
     img_height, img_width, img_channels = img.shape
     class_ids = []
     confidences = []
@@ -45,10 +45,29 @@ def get_detected_boxes(img, outs, conf_threshold):
                 boxes.append([det_corner_x, det_corner_y, det_width, det_height])
                 confidences.append(float(confidence))
                 class_ids.append(class_id)
-    return class_ids, confidences, boxes
+
+    indexes = cv2.dnn.NMSBoxes(boxes, confidences, conf_threshold, 0.4)
+    indexes_flattened = indexes.flatten()
+    class_ids_filtered = [class_ids[i] for i in indexes_flattened]
+    confidences_filtered = [confidences[i] for i in indexes_flattened]
+
+    return class_ids_filtered, confidences_filtered
+
+
+def print_results(class_ids, confidences):
+    with open("clothes.names", "r") as f:
+        classes = [line.strip() for line in f.readlines()]
+
+    for cls, conf in zip(class_ids, confidences):
+        label = f"{classes[cls]}: {100 * conf:.2f}%"
+        print(label)
+
+    if not class_ids:
+        print('No object was detected.')
 
 
 def classify_objects(img, conf_threshold):
+
     net = cv2.dnn.readNet("yolov3_clothes.weights", "yolov3_clothes.cfg")
     blob = cv2.dnn.blobFromImage(img, 1 / 255, (416, 416), (0, 0, 0), True, crop=False)
     net.setInput(blob)
@@ -57,19 +76,8 @@ def classify_objects(img, conf_threshold):
     output_layers = [layer_names[i[0] - 1] for i in net.getUnconnectedOutLayers()]
     outs = net.forward(output_layers)
 
-    class_ids, confidences, boxes = get_detected_boxes(img, outs, conf_threshold)
-    indexes = cv2.dnn.NMSBoxes(boxes, confidences, conf_threshold, 0.4)
-
-    with open("clothes.names", "r") as f:
-        classes = [line.strip() for line in f.readlines()]
-
-    for i in range(len(boxes)):
-        if i in indexes:
-            label = f"{classes[class_ids[i]]}: {100 * confidences[i]:.2f}%"
-            print(label)
-
-    if not boxes:
-        print('No object was detected.')
+    class_ids, confidences = get_detected_classes(img, outs, conf_threshold)
+    print_results(class_ids, confidences)
 
 
 def main():
